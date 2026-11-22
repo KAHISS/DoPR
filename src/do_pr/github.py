@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import subprocess
-from typing import Any
+from typing import Any, Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, unquote, urlparse
 from urllib.request import Request, urlopen
@@ -151,12 +151,185 @@ def get_code_changes(
     )
 
 
+def _run_github_cli(
+    arguments: list[str],
+    input_text: str | None = None,
+    timeout: int = 60,
+) -> str:
+    try:
+        result = subprocess.run(
+            ["gh", *arguments],
+            input=input_text,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except FileNotFoundError as error:
+        raise RuntimeError(
+            "GitHub CLI (gh) não encontrado. Instale o GitHub CLI e autentique "
+            "com `gh auth login` antes de continuar."
+        ) from error
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError("O GitHub CLI excedeu o tempo limite.") from error
+
+    if result.returncode != 0:
+        details = result.stderr.strip() or result.stdout.strip()
+        raise RuntimeError(
+            f"GitHub CLI retornou erro: {details or 'erro desconhecido'}"
+        )
+    return result.stdout.strip()
+
+
+def _github_api_list(endpoint: str) -> list[dict[str, Any]]:
+    response = _run_github_cli(
+        ["api", "--paginate", "--slurp", endpoint],
+    )
+    try:
+        pages: Any = json.loads(response)
+    except json.JSONDecodeError as error:
+        raise RuntimeError("O GitHub CLI retornou uma lista inválida.") from error
+    if not isinstance(pages, list) or any(
+        not isinstance(page, list) for page in pages
+    ) or any(
+        not isinstance(item, dict)
+        for page in pages
+        for item in page
+    ):
+        raise RuntimeError("O GitHub CLI retornou uma lista inválida.")
+    return [item for page in pages for item in page]
+
+
+def get_pull_request_options(repository_url: str) -> dict[str, Any]:
+    owner, repository = _github_repository_coordinates(repository_url)
+    repository_path = (
+        f"repos/{quote(owner, safe='')}/{quote(repository, safe='')}"
+    )
+    options: dict[str, Any] = {
+        "assignees": [],
+        "reviewers": [],
+        "labels": [],
+        "projects": [],
+        "errors": {},
+    }
+
+    def load_option(name: str, load: Callable[[], list[str]]) -> None:
+        try:
+            options[name] = load()
+        except (RuntimeError, ValueError, TypeError) as error:
+            options["errors"][name] = str(error)
+
+    def get_assignees() -> list[str]:
+        users = _github_api_list(f"{repository_path}/assignees?per_page=100")
+        return sorted(
+            {
+                user["login"]
+                for user in users
+                if isinstance(user.get("login"), str)
+            },
+            key=str.casefold,
+        )
+
+    def get_reviewers() -> list[str]:
+        users = _github_api_list(f"{repository_path}/collaborators?per_page=100")
+        return sorted(
+            {
+                user["login"]
+                for user in users
+                if isinstance(user.get("login"), str)
+                and (
+                    not isinstance(user.get("permissions"), dict)
+                    or any(
+                        user["permissions"].get(permission) is True
+                        for permission in ("push", "maintain", "admin")
+                    )
+                )
+            },
+            key=str.casefold,
+        )
+
+    def get_labels() -> list[str]:
+        labels = _github_api_list(f"{repository_path}/labels?per_page=100")
+        return sorted(
+            {
+                label["name"]
+                for label in labels
+                if isinstance(label.get("name"), str)
+            },
+            key=str.casefold,
+        )
+
+    def get_projects() -> list[str]:
+        response = _run_github_cli(
+            [
+                "project",
+                "list",
+                "--owner",
+                owner,
+                "--limit",
+                "100",
+                "--format",
+                "json",
+            ]
+        )
+        try:
+            projects: Any = json.loads(response)
+        except json.JSONDecodeError as error:
+            raise RuntimeError(
+                "O GitHub CLI retornou uma lista de projetos inválida."
+            ) from error
+        if isinstance(projects, dict):
+            projects = projects.get("projects")
+        if not isinstance(projects, list):
+            raise RuntimeError("O GitHub CLI retornou uma lista de projetos inválida.")
+        return sorted(
+            {
+                project["title"]
+                for project in projects
+                if isinstance(project, dict)
+                and isinstance(project.get("title"), str)
+                and project.get("closed") is not True
+            },
+            key=str.casefold,
+        )
+
+    load_option("assignees", get_assignees)
+    load_option("reviewers", get_reviewers)
+    load_option("labels", get_labels)
+    load_option("projects", get_projects)
+    return options
+
+
+def _validate_names(name: str, values: list[str] | None) -> list[str]:
+    if values is None:
+        return []
+    if not isinstance(values, list) or len(values) > 100:
+        raise ValueError(f"A seleção de {name} deve conter até 100 itens.")
+    result: list[str] = []
+    for value in values:
+        if (
+            not isinstance(value, str)
+            or not value.strip()
+            or len(value) > 256
+            or any(ord(char) < 32 for char in value)
+        ):
+            raise ValueError(f"A seleção de {name} contém um valor inválido.")
+        cleaned_value = value.strip()
+        if cleaned_value not in result:
+            result.append(cleaned_value)
+    return result
+
+
 def create_pull_request(
     repository_url: str,
     source_branch: str,
     target_branch: str,
     title: str,
     body: str,
+    assignees: list[str] | None = None,
+    reviewers: list[str] | None = None,
+    labels: list[str] | None = None,
+    project: str | None = None,
 ) -> str:
     owner, repository = _github_repository_coordinates(repository_url)
     source_branch = source_branch.strip()
@@ -175,52 +348,43 @@ def create_pull_request(
         raise ValueError("O título do PR deve ter entre 1 e 256 caracteres.")
     if not body.strip() or len(body) > 50_000:
         raise ValueError("O body do PR deve ter entre 1 e 50000 caracteres.")
+    assignees = _validate_names("responsáveis", assignees)
+    reviewers = _validate_names("revisores", reviewers)
+    labels = _validate_names("labels", labels)
+    if project is not None:
+        if (
+            not isinstance(project, str)
+            or len(project) > 256
+            or any(ord(char) < 32 for char in project)
+        ):
+            raise ValueError("O projeto selecionado é inválido.")
+        project = project.strip() or None
 
-    endpoint = (
-        f"repos/{quote(owner, safe='')}/{quote(repository, safe='')}/pulls"
-    )
-    payload = json.dumps(
-        {
-            "title": title.strip(),
-            "head": source_branch,
-            "base": target_branch,
-            "body": body.strip(),
-        }
-    )
-    try:
-        result = subprocess.run(
-            [
-                "gh",
-                "api",
-                "--method",
-                "POST",
-                endpoint,
-                "--input",
-                "-",
-                "--jq",
-                ".html_url",
-            ],
-            input=payload,
-            capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
-    except FileNotFoundError as error:
-        raise RuntimeError(
-            "GitHub CLI (gh) não encontrado. Instale o GitHub CLI e autentique "
-            "com `gh auth login` antes de criar o PR."
-        ) from error
-    except subprocess.TimeoutExpired as error:
-        raise RuntimeError("O GitHub CLI excedeu o tempo limite ao criar o PR.") from error
+    arguments = [
+        "pr",
+        "create",
+        "--repo",
+        f"{owner}/{repository}",
+        "--head",
+        source_branch,
+        "--base",
+        target_branch,
+        "--title",
+        title.strip(),
+        "--body-file",
+        "-",
+    ]
+    for assignee in assignees:
+        arguments.extend(["--assignee", assignee])
+    for reviewer in reviewers:
+        arguments.extend(["--reviewer", reviewer])
+    for label in labels:
+        arguments.extend(["--label", label])
+    if project:
+        arguments.extend(["--project", project])
 
-    if result.returncode != 0:
-        details = result.stderr.strip() or result.stdout.strip()
-        raise RuntimeError(
-            f"Não foi possível criar o PR pelo GitHub CLI: "
-            f"{details or 'erro desconhecido'}"
-        )
-    pull_request_url = result.stdout.strip()
+    result = _run_github_cli(arguments, input_text=body.strip())
+    pull_request_url = result.splitlines()[-1] if result else ""
     if not pull_request_url.startswith("https://github.com/"):
         raise RuntimeError(
             "O GitHub CLI não retornou a URL do pull request criado."

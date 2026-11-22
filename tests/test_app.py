@@ -190,6 +190,39 @@ class CodeChangesTests(unittest.TestCase):
         self.assertIn("+endpoint", diff)
 
 
+class PullRequestOptionsTests(unittest.TestCase):
+    @patch(
+        "do_pr.github._run_github_cli",
+        side_effect=[
+            json.dumps([[{"login": "zara"}, {"login": "alice"}]]),
+            json.dumps(
+                [[
+                    {"login": "reviewer", "permissions": {"push": True}},
+                    {"login": "reader", "permissions": {"pull": True}},
+                ]]
+            ),
+            json.dumps([[{"name": "bug"}, {"name": "feature"}]]),
+            json.dumps(
+                {
+                    "projects": [
+                        {"title": "Roadmap", "closed": False},
+                        {"title": "Archive", "closed": True},
+                    ]
+                }
+            ),
+        ],
+    )
+    def test_lists_assignees_reviewers_labels_and_v2_projects(self, run_mock):
+        options = github.get_pull_request_options("https://github.com/org/repo")
+
+        self.assertEqual(options["assignees"], ["alice", "zara"])
+        self.assertEqual(options["reviewers"], ["reviewer"])
+        self.assertEqual(options["labels"], ["bug", "feature"])
+        self.assertEqual(options["projects"], ["Roadmap"])
+        self.assertEqual(options["errors"], {})
+        self.assertEqual(run_mock.call_count, 4)
+
+
 class GeneratePullRequestDescriptionTests(unittest.TestCase):
     @patch(
         "do_pr.service.get_code_changes",
@@ -330,6 +363,10 @@ class CreatePullRequestTests(unittest.TestCase):
             target_branch="develop",
             title="Adicionar login",
             body="## Resumo\n\nImplementa OAuth.",
+            assignees=["alice"],
+            reviewers=["bob"],
+            labels=["bug", "help wanted"],
+            project="Roadmap",
         )
 
         self.assertEqual(url, "https://github.com/org/repo/pull/42")
@@ -338,27 +375,33 @@ class CreatePullRequestTests(unittest.TestCase):
             args[0],
             [
                 "gh",
-                "api",
-                "--method",
-                "POST",
-                "repos/org/repo/pulls",
-                "--input",
+                "pr",
+                "create",
+                "--repo",
+                "org/repo",
+                "--head",
+                "feat/login",
+                "--base",
+                "develop",
+                "--title",
+                "Adicionar login",
+                "--body-file",
                 "-",
-                "--jq",
-                ".html_url",
+                "--assignee",
+                "alice",
+                "--reviewer",
+                "bob",
+                "--label",
+                "bug",
+                "--label",
+                "help wanted",
+                "--project",
+                "Roadmap",
             ],
         )
         self.assertEqual(kwargs["timeout"], 60)
         self.assertFalse(kwargs["check"])
-        self.assertEqual(
-            json.loads(kwargs["input"]),
-            {
-                "title": "Adicionar login",
-                "head": "feat/login",
-                "base": "develop",
-                "body": "## Resumo\n\nImplementa OAuth.",
-            },
-        )
+        self.assertEqual(kwargs["input"], "## Resumo\n\nImplementa OAuth.")
 
     @patch("do_pr.github.subprocess.run")
     def test_reports_github_cli_failure(self, run_mock):
@@ -385,6 +428,20 @@ class CreatePullRequestTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     github.create_pull_request(
                         repository_url, source, target, "Title", "Body"
+                    )
+
+        run_mock.assert_not_called()
+
+    @patch("do_pr.github.subprocess.run")
+    def test_rejects_invalid_optional_selection_before_running_cli(self, run_mock):
+        with self.assertRaisesRegex(ValueError, "labels"):
+                    github.create_pull_request(
+                        "https://github.com/org/repo",
+                        "feat/login",
+                        "develop",
+                        "Title",
+                        "Body",
+                        labels="bug",
                     )
 
         run_mock.assert_not_called()
@@ -419,6 +476,12 @@ class WebInterfaceTests(unittest.TestCase):
         self.assertIn(b"Revise e confirme o pull request", body)
         self.assertIn(b"Confirmar e criar PR", body)
         self.assertIn(b"/api/create-pr", body)
+        self.assertIn(b"/api/pr-options", body)
+        self.assertIn(b'id="pr-assignees"', body)
+        self.assertIn(b'id="pr-reviewers"', body)
+        self.assertIn(b'id="pr-labels"', body)
+        self.assertIn(b'id="pr-project"', body)
+        self.assertIn(b'window.open("about:blank", "_blank")', body)
         self.assertIn(b'value="http://localhost:11434"', body)
 
     @patch.dict("os.environ", {"OLLAMA_URL": "http://host.docker.internal:11434"})
@@ -488,6 +551,10 @@ class WebInterfaceTests(unittest.TestCase):
             "target_branch": "develop",
             "title": "Adicionar login",
             "body": "## Resumo",
+            "assignees": ["alice"],
+            "reviewers": ["bob"],
+            "labels": ["bug"],
+            "project": "Roadmap",
         }
 
         status, body = self.request(
@@ -508,7 +575,42 @@ class WebInterfaceTests(unittest.TestCase):
             target_branch="develop",
             title="Adicionar login",
             body="## Resumo",
+            assignees=["alice"],
+            reviewers=["bob"],
+            labels=["bug"],
+            project="Roadmap",
         )
+
+    @patch(
+        "do_pr.web.get_pull_request_options",
+        return_value={
+            "assignees": ["alice"],
+            "reviewers": ["bob"],
+            "labels": ["bug"],
+            "projects": ["Roadmap"],
+            "errors": {},
+        },
+    )
+    def test_lists_pull_request_options_for_repository(self, options_mock):
+        status, body = self.request(
+            "POST",
+            "/api/pr-options",
+            body=json.dumps({"repository_url": "https://github.com/org/repo"}),
+            headers={"Content-Type": "application/json"},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            json.loads(body),
+            {
+                "assignees": ["alice"],
+                "reviewers": ["bob"],
+                "labels": ["bug"],
+                "projects": ["Roadmap"],
+                "errors": {},
+            },
+        )
+        options_mock.assert_called_once_with("https://github.com/org/repo")
 
     @patch("do_pr.web.create_pull_request", side_effect=RuntimeError("not logged in"))
     def test_reports_pull_request_creation_failure(self, create_mock):

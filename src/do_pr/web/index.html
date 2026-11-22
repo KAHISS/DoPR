@@ -86,6 +86,12 @@
     .dialog-field { margin-top: 14px; }
     .dialog-field input, .dialog-field textarea { width: 100%; border: 1px solid #d5ded8; border-radius: 8px; padding: 10px 12px; color: #17231f; background: #fff; font: inherit; font-size: 13px; line-height: 1.5; }
     .dialog-field textarea { min-height: 220px; resize: vertical; }
+    .dialog-options { margin-top: 16px; border-top: 1px solid #edf1ee; padding-top: 14px; }
+    .dialog-options summary { font-size: 13px; }
+    .dialog-options-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    .dialog-field select[multiple] { min-height: 108px; padding: 5px; }
+    .dialog-field select[multiple] option { padding: 4px 7px; }
+    .dialog-help { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
     .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
     .dialog-actions .primary { width: auto; min-height: 40px; margin: 0; padding: 0 15px; }
     .dialog-actions .secondary { min-height: 40px; padding: 0 15px; }
@@ -108,6 +114,7 @@
       .branch-row { grid-template-columns: 1fr; gap: 0; }
       .branch-arrow { display: none; }
       .advanced-grid { grid-template-columns: 1fr; }
+      .dialog-options-grid { grid-template-columns: 1fr; }
       .result-head { align-items: flex-start; flex-direction: column; }
       .result-actions { width: 100%; }
       .secondary { flex: 1; }
@@ -198,6 +205,40 @@
       <label for="pr-body">Body do PR (Markdown)</label>
       <textarea id="pr-body" maxlength="50000" required></textarea>
     </div>
+    <details class="dialog-options">
+      <summary>Responsáveis, revisores, labels e projeto (opcional)</summary>
+      <div class="dialog-options-grid">
+        <div class="dialog-field">
+          <label for="pr-assignees">Responsáveis</label>
+          <select id="pr-assignees" multiple size="4" disabled aria-describedby="pr-assignees-help">
+            <option>Carregando responsáveis...</option>
+          </select>
+          <p class="dialog-help" id="pr-assignees-help">Selecione uma ou mais pessoas para atribuir ao PR.</p>
+        </div>
+        <div class="dialog-field">
+          <label for="pr-reviewers">Revisores</label>
+          <select id="pr-reviewers" multiple size="4" disabled aria-describedby="pr-reviewers-help">
+            <option>Carregando colaboradores...</option>
+          </select>
+          <p class="dialog-help" id="pr-reviewers-help">São listados colaboradores com acesso de escrita.</p>
+        </div>
+        <div class="dialog-field">
+          <label for="pr-labels">Labels</label>
+          <select id="pr-labels" multiple size="4" disabled aria-describedby="pr-labels-help">
+            <option>Carregando labels...</option>
+          </select>
+          <p class="dialog-help" id="pr-labels-help">Você pode selecionar mais de uma label.</p>
+        </div>
+        <div class="dialog-field">
+          <label for="pr-project">GitHub Project (V2)</label>
+          <select id="pr-project" disabled>
+            <option value="">Não adicionar a um projeto</option>
+          </select>
+        </div>
+      </div>
+      <p class="dialog-help">Em listas múltiplas, use Ctrl (Windows/Linux) ou Command (macOS) para selecionar vários itens.</p>
+      <p class="dialog-status" id="pr-options-status" role="status" aria-live="polite"></p>
+    </details>
     <p class="dialog-status" id="create-pr-status" role="status" aria-live="polite"></p>
     <div class="dialog-actions">
       <button class="secondary" id="cancel-create-pr" type="button">Cancelar</button>
@@ -232,6 +273,11 @@
     const prBodyInput = document.querySelector("#pr-body");
     const createPrTarget = document.querySelector("#create-pr-target");
     const createPrStatus = document.querySelector("#create-pr-status");
+    const prAssigneesSelect = document.querySelector("#pr-assignees");
+    const prReviewersSelect = document.querySelector("#pr-reviewers");
+    const prLabelsSelect = document.querySelector("#pr-labels");
+    const prProjectSelect = document.querySelector("#pr-project");
+    const prOptionsStatus = document.querySelector("#pr-options-status");
     const confirmCreatePrButton = document.querySelector("#confirm-create-pr");
     const cancelCreatePrButton = document.querySelector("#cancel-create-pr");
     const providerSettings = {
@@ -258,6 +304,7 @@
     let branchTimer;
     let branchRequestId = 0;
     let branchController;
+    let prOptionsRequestId = 0;
     let pendingPullRequest;
 
     function setBranchOptions(select, branches, placeholder) {
@@ -266,6 +313,85 @@
         select.add(new Option(branch, branch));
       }
       select.disabled = branches.length === 0;
+    }
+
+    function setMultiSelectOptions(select, values, placeholder) {
+      select.replaceChildren();
+      if (!values.length) {
+        select.add(new Option(placeholder, ""));
+        select.disabled = true;
+        return;
+      }
+      for (const value of values) {
+        select.add(new Option(value, value));
+      }
+      select.disabled = false;
+    }
+
+    async function loadPullRequestOptions(repositoryUrl) {
+      const requestId = ++prOptionsRequestId;
+      setMultiSelectOptions(prAssigneesSelect, [], "Nenhum responsável disponível");
+      setMultiSelectOptions(prReviewersSelect, [], "Nenhum colaborador disponível");
+      setMultiSelectOptions(prLabelsSelect, [], "Nenhuma label disponível");
+      prProjectSelect.replaceChildren(new Option("Não adicionar a um projeto", ""));
+      prProjectSelect.disabled = true;
+      prOptionsStatus.className = "dialog-status";
+      prOptionsStatus.textContent = "Carregando opções do repositório...";
+
+      try {
+        const response = await fetch("/api/pr-options", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repository_url: repositoryUrl }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Não foi possível carregar as opções do PR.");
+        if (
+          !Array.isArray(result.assignees)
+          || !Array.isArray(result.reviewers)
+          || !Array.isArray(result.labels)
+          || !Array.isArray(result.projects)
+          || !result.assignees.every((value) => typeof value === "string")
+          || !result.reviewers.every((value) => typeof value === "string")
+          || !result.labels.every((value) => typeof value === "string")
+          || !result.projects.every((value) => typeof value === "string")
+        ) {
+          throw new Error("O servidor retornou opções de PR inválidas.");
+        }
+        if (requestId !== prOptionsRequestId) return;
+
+        setMultiSelectOptions(prAssigneesSelect, result.assignees, "Nenhum responsável disponível");
+        setMultiSelectOptions(prReviewersSelect, result.reviewers, "Nenhum colaborador disponível");
+        setMultiSelectOptions(prLabelsSelect, result.labels, "Nenhuma label disponível");
+        for (const project of result.projects) {
+          prProjectSelect.add(new Option(project, project));
+        }
+        prProjectSelect.disabled = result.projects.length === 0;
+
+        const errors = result.errors && typeof result.errors === "object"
+          ? Object.entries(result.errors)
+          : [];
+        if (errors.length) {
+          const names = {
+            assignees: "responsáveis",
+            reviewers: "revisores",
+            labels: "labels",
+            projects: "projetos",
+          };
+          prOptionsStatus.className = "dialog-status error";
+          prOptionsStatus.textContent = errors
+            .map(([name, message]) => `Não foi possível carregar ${names[name] || name}: ${message}`)
+            .join(" ");
+        } else {
+          prOptionsStatus.className = "dialog-status";
+          prOptionsStatus.textContent = "Opções carregadas. Todas são opcionais.";
+        }
+      } catch (error) {
+        if (requestId !== prOptionsRequestId) return;
+        prOptionsStatus.className = "dialog-status error";
+        prOptionsStatus.textContent =
+          `${error.message || "Falha ao carregar as opções."} Você ainda pode criar o PR sem essas opções.`;
+      }
     }
 
     async function loadBranches(repositoryUrl, requestId) {
@@ -423,6 +549,7 @@
         downloadButton.disabled = false;
         status.textContent = "Rascunho gerado. Confirme se deseja criar o PR no GitHub.";
         createPrDialog.showModal();
+        loadPullRequestOptions(pendingPullRequest.repository_url);
       } catch (error) {
         status.className = "status error";
         status.textContent = error.message || "Falha ao falar com o servidor local.";
@@ -449,6 +576,8 @@
     confirmCreatePrButton.addEventListener("click", async () => {
       if (!pendingPullRequest || !prTitleInput.reportValidity() || !prBodyInput.reportValidity()) return;
 
+      const pullRequestTab = window.open("about:blank", "_blank");
+      if (pullRequestTab) pullRequestTab.opener = null;
       confirmCreatePrButton.disabled = true;
       cancelCreatePrButton.disabled = true;
       confirmCreatePrButton.textContent = "Criando PR...";
@@ -462,6 +591,10 @@
             ...pendingPullRequest,
             title: prTitleInput.value,
             body: prBodyInput.value,
+            assignees: Array.from(prAssigneesSelect.selectedOptions, (option) => option.value),
+            reviewers: Array.from(prReviewersSelect.selectedOptions, (option) => option.value),
+            labels: Array.from(prLabelsSelect.selectedOptions, (option) => option.value),
+            project: prProjectSelect.value,
           }),
         });
         const result = await response.json();
@@ -472,9 +605,19 @@
 
         createPrDialog.close();
         status.className = "status";
-        status.textContent = `Pull request criado: ${result.url}`;
+        status.replaceChildren(document.createTextNode("Pull request criado. "));
+        const pullRequestLink = document.createElement("a");
+        pullRequestLink.href = result.url;
+        pullRequestLink.target = "_blank";
+        pullRequestLink.rel = "noopener noreferrer";
+        pullRequestLink.textContent = "Abrir pull request";
+        status.append(pullRequestLink);
+        if (pullRequestTab && !pullRequestTab.closed) {
+          pullRequestTab.location.replace(result.url);
+        }
         pendingPullRequest = null;
       } catch (error) {
+        if (pullRequestTab && !pullRequestTab.closed) pullRequestTab.close();
         createPrStatus.className = "dialog-status error";
         createPrStatus.textContent = error.message || "Falha ao criar o PR pelo GitHub CLI.";
       } finally {

@@ -6,12 +6,16 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from .github import create_pull_request, get_repository_branches
+from .github import (
+    create_pull_request,
+    get_pull_request_options,
+    get_repository_branches,
+)
 from .service import generate_pull_request_description
 
 
 _PAGE_PATH = Path(__file__).parent / "web" / "index.html"
-_MAX_REQUEST_SIZE = 64 * 1024
+_MAX_REQUEST_SIZE = 256 * 1024
 
 
 class PullRequestHandler(BaseHTTPRequestHandler):
@@ -56,7 +60,12 @@ class PullRequestHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         endpoint = urlparse(self.path).path
-        if endpoint not in {"/api/generate", "/api/branches", "/api/create-pr"}:
+        if endpoint not in {
+            "/api/generate",
+            "/api/branches",
+            "/api/pr-options",
+            "/api/create-pr",
+        }:
             self._send_json(404, {"error": "Endpoint não encontrado."})
             return
 
@@ -95,6 +104,18 @@ class PullRequestHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"branches": branches})
             return
 
+        if endpoint == "/api/pr-options":
+            if not isinstance(repository_url, str) or not repository_url.strip():
+                self._send_json(400, {"error": "Informe a URL do repositório."})
+                return
+            try:
+                options = get_pull_request_options(repository_url.strip())
+            except (OSError, RuntimeError, ValueError, TypeError) as error:
+                self._send_json(400, {"error": str(error)})
+                return
+            self._send_json(200, options)
+            return
+
         if endpoint == "/api/create-pr":
             source_branch = payload.get("source_branch")
             target_branch = payload.get("target_branch")
@@ -122,6 +143,10 @@ class PullRequestHandler(BaseHTTPRequestHandler):
                     target_branch=target_branch.strip(),
                     title=title.strip(),
                     body=body.strip(),
+                    assignees=payload.get("assignees", []),
+                    reviewers=payload.get("reviewers", []),
+                    labels=payload.get("labels", []),
+                    project=payload.get("project"),
                 )
             except (OSError, RuntimeError, ValueError, TypeError) as error:
                 self._send_json(400, {"error": str(error)})
