@@ -75,7 +75,7 @@ montar nem expor a configuração pessoal do `gh` do host:
 1. Acesse [Fine-grained personal access tokens](https://github.com/settings/personal-access-tokens/new) e entre na sua conta do GitHub.
 2. Dê um nome ao token e escolha uma validade.
 3. Em **Resource owner**, selecione a conta ou organização proprietária do repositório.
-4. Em **Repository access**, selecione **Only select repositories** e escolha o repositório usado no app.
+4. Em **Repository access**, selecione **Only select repositories** e escolha o repositório usado no app ou todos.
 5. Em **Repository permissions**, configure:
    - **Contents: Read-only**, para listar branches e ler a comparação.
    - **Pull requests: Read and write**, para criar o PR pelo GitHub CLI.
