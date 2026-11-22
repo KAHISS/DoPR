@@ -85,6 +85,15 @@ montar nem expor a configuração pessoal do `gh` do host:
    - **Projects: Read and write**, para listar e associar GitHub Projects V2.
 6. Clique em **Generate token** e copie o valor. O GitHub só o exibe na criação.
 
+**Limitação importante:** fine-grained tokens não conseguem acessar Projects V2
+pertencentes a uma conta pessoal. Se o erro mencionar `user.projectsV2`, use um
+token classic para essa funcionalidade. Em **Settings > Developer settings >
+Personal access tokens > Tokens (classic)**, gere um token com o escopo
+`project` e também `repo` para repositórios privados (`public_repo` para
+públicos). Tokens classic têm acesso mais amplo; use-os somente se precisar
+associar o PR a um projeto pessoal. Consulte as
+[limitações dos fine-grained tokens](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#fine-grained-personal-access-tokens-limitations).
+
 Se a organização exigir aprovação para tokens ou usar SSO, solicite a aprovação
 ou autorize o token conforme as políticas da organização.
 
@@ -109,11 +118,12 @@ inicie ou recrie o container:
 docker compose up --build
 ```
 
-Se receber **Resource not accessible by personal access token (HTTP 403)**,
-confirme que o token inclui o repositório correto, tem as permissões necessárias
-para a opção selecionada e foi aprovado/autoriza SSO quando exigido pela
-organização. Para solicitar projetos com uma sessão autenticada pelo `gh`,
-autorize o escopo adicional com `gh auth refresh -s project`.
+Se receber **Resource not accessible by personal access token (HTTP 403)** ao
+listar projetos pessoais, fine-grained tokens não são compatíveis com esse
+recurso; use o token classic com escopo `project` descrito acima. Para projetos
+de uma organização, confirme **Projects: Read and write**, o resource owner e a
+aprovação/SSO. Se usar uma sessão local autenticada pelo `gh` em vez de `GH_TOKEN`,
+autorize o escopo com `gh auth refresh -s project`.
 
 Abra [http://127.0.0.1:8000](http://127.0.0.1:8000). O container usa
 `host.docker.internal:11434` como URL inicial do Ollama. No Linux, o Compose
