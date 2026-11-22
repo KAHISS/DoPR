@@ -1,4 +1,4 @@
-# Gerador de descrição de Pull Request
+# Gerador de Pull Request
 
 Este script busca o diff entre duas branches do GitHub e o envia a um provedor
 de IA para gerar uma descrição de PR em Markdown. A branch de origem é a que
