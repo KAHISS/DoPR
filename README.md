@@ -70,17 +70,44 @@ que o PR foi criado.
 O container inclui o GitHub CLI. A autenticação é passada por `GH_TOKEN`, sem
 montar nem expor a configuração pessoal do `gh` do host:
 
+#### Criar um token de acesso
+
+1. Acesse [Fine-grained personal access tokens](https://github.com/settings/personal-access-tokens/new) e entre na sua conta do GitHub.
+2. Dê um nome ao token e escolha uma validade.
+3. Em **Resource owner**, selecione a conta ou organização proprietária do repositório.
+4. Em **Repository access**, selecione **Only select repositories** e escolha o repositório usado no app.
+5. Em **Repository permissions**, configure:
+   - **Contents: Read-only**, para listar branches e ler a comparação.
+   - **Pull requests: Read and write**, para criar o PR pelo GitHub CLI.
+6. Clique em **Generate token** e copie o valor. O GitHub só o exibe na criação.
+
+Se a organização exigir aprovação para tokens ou usar SSO, solicite a aprovação
+ou autorize o token conforme as políticas da organização.
+
+Não publique nem envie o token a outras pessoas. Configure-o no arquivo `.env`
+local (não no `.env.example`). Se ainda não houver um `.env`, crie-o a partir do
+exemplo; se já existir, edite-o sem sobrescrever:
+
 ```bash
 cp .env.example .env
 ```
 
-Edite `.env` e informe um token fine-grained com acesso ao repositório,
-permissão de leitura de conteúdo e escrita de pull requests. Em seguida, inicie
-a aplicação:
+Edite `.env` e substitua o valor de exemplo:
+
+```dotenv
+GH_TOKEN=github_pat_seu_token
+```
+
+O Compose também fornece esse valor à aplicação como `GITHUB_TOKEN`. Depois,
+inicie ou recrie o container:
 
 ```bash
 docker compose up --build
 ```
+
+Se receber **Resource not accessible by personal access token (HTTP 403)**,
+confirme que o token inclui o repositório correto, tem **Pull requests: Read
+and write** e foi aprovado/autoriza SSO quando exigido pela organização.
 
 Abra [http://127.0.0.1:8000](http://127.0.0.1:8000). O container usa
 `host.docker.internal:11434` como URL inicial do Ollama. No Linux, o Compose
