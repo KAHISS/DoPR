@@ -1,3 +1,4 @@
+import base64
 import http.client
 import json
 import threading
@@ -109,6 +110,55 @@ class LLMChatTests(unittest.TestCase):
 
 
 class CodeChangesTests(unittest.TestCase):
+    @patch(
+        "do_pr.github.urlopen",
+        return_value=BytesIO(
+            json.dumps(
+                {
+                    "type": "file",
+                    "encoding": "base64",
+                    "content": base64.b64encode(
+                        b"## Contexto\n\n## Checklist\n- [ ] Testes"
+                    ).decode(),
+                }
+            ).encode()
+        ),
+    )
+    def test_fetches_pull_request_template_from_target_branch(self, urlopen_mock):
+        template = github.get_pull_request_template(
+            "https://github.com/org/repo",
+            target_branch="release/2026",
+            github_token="github-token",
+        )
+
+        request = urlopen_mock.call_args.args[0]
+        self.assertIn(
+            "/contents/.github/pull_request_template.md?ref=release%2F2026",
+            request.full_url,
+        )
+        self.assertEqual(request.get_header("Authorization"), "Bearer github-token")
+        self.assertEqual(template, "## Contexto\n\n## Checklist\n- [ ] Testes")
+
+    @patch(
+        "do_pr.github.urlopen",
+        side_effect=HTTPError(
+            "https://api.github.com/repos/org/repo/contents/template",
+            404,
+            "Not Found",
+            {},
+            BytesIO(b'{"message":"Not Found"}'),
+        ),
+    )
+    def test_returns_none_when_pull_request_template_does_not_exist(
+        self, _urlopen_mock
+    ):
+        self.assertIsNone(
+            github.get_pull_request_template(
+                "https://github.com/org/repo",
+                target_branch="develop",
+            )
+        )
+
     @patch(
         "do_pr.github.urlopen",
         side_effect=HTTPError(
@@ -244,15 +294,22 @@ class PullRequestOptionsTests(unittest.TestCase):
 
 class GeneratePullRequestDescriptionTests(unittest.TestCase):
     @patch(
+        "do_pr.service.get_pull_request_template",
+        return_value="## Contexto\n\n## Como testar\n- [ ] Testes",
+    )
+    @patch(
         "do_pr.service.get_code_changes",
         return_value="Arquivos alterados: 1\n\n### src/services/auth.py\n+token validation",
     )
     @patch(
         "do_pr.service.llm_chat",
-        return_value='{"title":"Adicionar login OAuth","body":"## Contexto\\n\\nImplementa login."}',
+        return_value=(
+            '{"title":"Adicionar login OAuth",'
+            '"body":"## Contexto\\n\\nImplementa login."}'
+        ),
     )
-    def test_sends_only_the_diff_and_optional_description_to_model(
-        self, llm_mock, diff_mock
+    def test_sends_diff_template_and_optional_description_to_model(
+        self, llm_mock, diff_mock, template_mock
     ):
         result = main.generate_pull_request_description(
             "https://github.com/org/repo",
@@ -273,6 +330,9 @@ class GeneratePullRequestDescriptionTests(unittest.TestCase):
         self.assertIn("Branch de origem: feat/login", prompt)
         self.assertIn("Branch de destino: develop", prompt)
         self.assertIn("Adicionar login por OAuth", prompt)
+        self.assertIn("Template de pull request da branch de destino", prompt)
+        self.assertIn("## Como testar", prompt)
+        self.assertIn("## Contexto", prompt)
         self.assertIn("Diff de código entre destino e origem", prompt)
         self.assertIn("+token validation", prompt)
         system_prompt = llm_mock.call_args.args[0][0]["content"]
@@ -282,6 +342,12 @@ class GeneratePullRequestDescriptionTests(unittest.TestCase):
             "https://github.com/org/repo",
             "develop",
             "feat/login",
+            github_token=None,
+            timeout=300,
+        )
+        template_mock.assert_called_once_with(
+            "https://github.com/org/repo",
+            "develop",
             github_token=None,
             timeout=300,
         )
@@ -307,12 +373,18 @@ class GeneratePullRequestDescriptionTests(unittest.TestCase):
 
         diff_mock.assert_not_called()
 
-    @patch("do_pr.service.get_code_changes", return_value="início\n" + "x" * 10000 + "\nfim")
+    @patch("do_pr.service.get_pull_request_template", return_value=None)
+    @patch(
+        "do_pr.service.get_code_changes",
+        return_value="início\n" + "x" * 10000 + "\nfim",
+    )
     @patch(
         "do_pr.service.llm_chat",
         return_value='{"title":"Título","body":"## Body"}',
     )
-    def test_truncates_long_diff_to_fit_model_context(self, llm_mock, diff_mock):
+    def test_truncates_long_diff_to_fit_model_context(
+        self, llm_mock, diff_mock, _template_mock
+    ):
         main.generate_pull_request_description(
             "https://github.com/org/repo",
             "feat/large",
@@ -327,12 +399,16 @@ class GeneratePullRequestDescriptionTests(unittest.TestCase):
         self.assertLess(len(prompt), 1500)
 
     @patch(
+        "do_pr.service.get_pull_request_template",
+        return_value=None,
+    )
+    @patch(
         "do_pr.service.get_code_changes",
         return_value="diff",
     )
     @patch("do_pr.service.llm_chat", return_value="Não é JSON")
     def test_rejects_model_output_without_title_and_body_json(
-        self, llm_mock, diff_mock
+        self, llm_mock, diff_mock, _template_mock
     ):
         with self.assertRaisesRegex(RuntimeError, "identificar título e body"):
             main.generate_pull_request_description(

@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import os
 import subprocess
@@ -12,6 +13,8 @@ from gitingest.utils.git_utils import fetch_remote_branches_or_tags
 
 
 _MAX_COMPARE_RESPONSE_BYTES = 20 * 1024 * 1024
+_MAX_PULL_REQUEST_TEMPLATE_BYTES = 64 * 1024
+_MAX_PULL_REQUEST_TEMPLATE_RESPONSE_BYTES = 128 * 1024
 
 
 def _github_repository_coordinates(repository_url: str) -> tuple[str, str]:
@@ -149,6 +152,73 @@ def get_code_changes(
         f"{file_limit_note}Arquivos alterados: {len(changed_files)}\n\n"
         + "\n\n".join(diff_sections)
     )
+
+
+def get_pull_request_template(
+    repository_url: str,
+    target_branch: str,
+    github_token: str | None = None,
+    timeout: int = 300,
+) -> str | None:
+    owner, repository = _github_repository_coordinates(repository_url)
+    endpoint = (
+        f"https://api.github.com/repos/{quote(owner, safe='')}/"
+        f"{quote(repository, safe='')}/contents/"
+        f".github/pull_request_template.md?ref={quote(target_branch, safe='')}"
+    )
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "do-pr-description-generator",
+    }
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
+
+    try:
+        with urlopen(Request(endpoint, headers=headers), timeout=timeout) as response:
+            response_body = response.read(_MAX_PULL_REQUEST_TEMPLATE_RESPONSE_BYTES + 1)
+        if len(response_body) > _MAX_PULL_REQUEST_TEMPLATE_RESPONSE_BYTES:
+            raise RuntimeError(
+                "O template de pull request excede o limite de tamanho permitido."
+            )
+        template_data: Any = json.loads(response_body.decode("utf-8"))
+    except HTTPError as error:
+        if error.code == 404:
+            return None
+        details = error.read().decode("utf-8", errors="replace").strip()
+        raise RuntimeError(
+            f"GitHub retornou HTTP {error.code} ao buscar o template de PR: "
+            f"{details or error.reason}"
+        ) from error
+    except (URLError, TimeoutError) as error:
+        raise RuntimeError(
+            f"Não foi possível buscar o template de PR no GitHub: {error}"
+        ) from error
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError(
+            "O GitHub retornou uma resposta inválida para o template de PR."
+        ) from error
+
+    if not isinstance(template_data, dict):
+        raise RuntimeError("Os dados do template de PR retornados pelo GitHub são inválidos.")
+    if template_data.get("type") != "file" or template_data.get("encoding") != "base64":
+        raise RuntimeError("O arquivo de template de PR não está em formato base64.")
+    encoded_content = template_data.get("content")
+    if not isinstance(encoded_content, str):
+        raise RuntimeError("O GitHub não retornou o conteúdo do template de PR.")
+    try:
+        template_bytes = base64.b64decode(
+            "".join(encoded_content.split()),
+            validate=True,
+        )
+        template = template_bytes.decode("utf-8")
+    except (ValueError, UnicodeDecodeError) as error:
+        raise RuntimeError("O conteúdo do template de PR retornado é inválido.") from error
+    if len(template_bytes) > _MAX_PULL_REQUEST_TEMPLATE_BYTES:
+        raise RuntimeError(
+            "O template de pull request excede o limite de 64 KiB."
+        )
+    return template.strip() or None
 
 
 def _run_github_cli(

@@ -48,6 +48,12 @@ para direcionar a descrição. O modelo usa o diff como evidência das mudanças
 o texto serve apenas como contexto e não deve ser apresentado como prova de
 uma mudança implementada.
 
+Se o repositório tiver `.github/pull_request_template.md` na branch de destino
+selecionada, o conteúdo é enviado ao modelo como referência para a estrutura do
+body e para os checklists. O template é opcional; se não existir, a geração
+segue normalmente. Para manter o template dentro da janela de contexto, trechos
+muito longos podem ser truncados.
+
 Depois de gerar o rascunho, a interface abre uma confirmação com o título e o
 body em Markdown, que podem ser revisados e editados. O PR só é criado depois
 de clicar em **Confirmar e criar PR**; **Cancelar** mantém o rascunho sem
