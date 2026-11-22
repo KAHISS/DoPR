@@ -1,0 +1,15 @@
+services:
+  pr-assist:
+    image: kahiss/do_pr:latest
+    pull_policy: always
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      GH_TOKEN: ${GH_TOKEN:?Defina GH_TOKEN no arquivo .env}
+      GITHUB_TOKEN: ${GH_TOKEN:?Defina GH_TOKEN no arquivo .env}
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

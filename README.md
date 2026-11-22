@@ -118,6 +118,23 @@ inicie ou recrie o container:
 docker compose up --build
 ```
 
+#### Usar a imagem publicada no Docker Hub
+
+Para executar a imagem pronta, sem construir o projeto localmente, use o arquivo
+[compose.dockerhub.yaml](./compose.dockerhub.yaml). Ele sempre busca
+`kahiss/do_pr:latest` no Docker Hub e usa as mesmas variáveis do `.env`:
+
+```bash
+docker compose -f compose.dockerhub.yaml up -d
+```
+
+Para atualizar a imagem e recriar o container:
+
+```bash
+docker compose -f compose.dockerhub.yaml pull
+docker compose -f compose.dockerhub.yaml up -d --force-recreate
+```
+
 Se receber **Resource not accessible by personal access token (HTTP 403)** ao
 listar projetos pessoais, fine-grained tokens não são compatíveis com esse
 recurso; use o token classic com escopo `project` descrito acima. Para projetos
@@ -125,7 +142,8 @@ de uma organização, confirme **Projects: Read and write**, o resource owner e 
 aprovação/SSO. Se usar uma sessão local autenticada pelo `gh` em vez de `GH_TOKEN`,
 autorize o escopo com `gh auth refresh -s project`.
 
-Abra [http://127.0.0.1:8000](http://127.0.0.1:8000). O container usa
+Com qualquer um dos dois Compose, abra
+[http://127.0.0.1:8000](http://127.0.0.1:8000). O container usa
 `host.docker.internal:11434` como URL inicial do Ollama. No Linux, o Compose
 configura esse nome para o gateway do host. O Ollama precisa aceitar conexões
 vindas do Docker; por padrão, ele pode escutar apenas em `localhost`. Se
@@ -140,7 +158,11 @@ interface. O arquivo `.env` é ignorado pelo Git.
 Para encerrar:
 
 ```bash
+# Imagem construída localmente:
 docker compose down
+
+# Imagem do Docker Hub:
+docker compose -f compose.dockerhub.yaml down
 ```
 
 Em **Configurações do modelo**, selecione Ollama, OpenAI ou **Outro compatível
