@@ -88,6 +88,23 @@ def get_code_changes(
         comparison_data: Any = json.loads(response_body.decode("utf-8"))
     except HTTPError as error:
         details = error.read().decode("utf-8", errors="replace").strip()
+        try:
+            error_data = json.loads(details)
+        except json.JSONDecodeError:
+            error_data = None
+        if (
+            error.code == 404
+            and isinstance(error_data, dict)
+            and isinstance(error_data.get("message"), str)
+            and error_data["message"].startswith("No common ancestor between ")
+        ):
+            raise RuntimeError(
+                "O GitHub não permite comparar essas branches nem abrir um PR "
+                "porque elas têm históricos Git independentes e não compartilham "
+                "um commit ancestral. Crie uma nova branch a partir da branch de "
+                "destino e reaplique nela as alterações da feature; depois envie "
+                "essa branch e tente novamente."
+            ) from error
         raise RuntimeError(
             f"GitHub retornou HTTP {error.code} ao buscar o diff: "
             f"{details or error.reason}"

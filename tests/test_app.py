@@ -3,6 +3,7 @@ import json
 import threading
 import unittest
 from io import BytesIO
+from urllib.error import HTTPError
 from unittest.mock import AsyncMock, patch
 
 from do_pr import github, models, providers, service as main, web
@@ -108,6 +109,26 @@ class LLMChatTests(unittest.TestCase):
 
 
 class CodeChangesTests(unittest.TestCase):
+    @patch(
+        "do_pr.github.urlopen",
+        side_effect=HTTPError(
+            "https://api.github.com/repos/org/repo/compare/main...feat",
+            404,
+            "Not Found",
+            {},
+            BytesIO(
+                b'{"message":"No common ancestor between main and feat."}'
+            ),
+        ),
+    )
+    def test_explains_unrelated_branch_histories(self, _urlopen_mock):
+        with self.assertRaisesRegex(RuntimeError, "históricos Git independentes"):
+            main.get_code_changes(
+                "https://github.com/org/repo",
+                target_branch="main",
+                source_branch="feat",
+            )
+
     @patch(
         "do_pr.github.urlopen",
         return_value=BytesIO(

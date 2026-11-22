@@ -173,3 +173,9 @@ GitHub pode não fornecer patch textual para arquivos binários ou alterações
 muito grandes; nesses casos, o modelo recebe o nome do arquivo e as estatísticas
 disponíveis, mas pode não conseguir descrever o conteúdo. Revise a descrição e
 valide os testes antes de abrir o PR.
+
+Se o GitHub informar que não há ancestral comum entre as branches, elas têm
+históricos independentes. Nesse caso, o GitHub não consegue comparar nem criar
+o PR, e um token diferente não resolve. Crie uma branch a partir da branch de
+destino e reaplique nela as alterações da feature; depois envie essa nova branch
+ao GitHub e gere o PR novamente.
