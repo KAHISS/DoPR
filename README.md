@@ -51,8 +51,10 @@ uma mudança implementada.
 Depois de gerar o rascunho, a interface abre uma confirmação com o título e o
 body em Markdown, que podem ser revisados e editados. O PR só é criado depois
 de clicar em **Confirmar e criar PR**; **Cancelar** mantém o rascunho sem
-publicá-lo. A branch de origem é enviada como `head` e a branch de destino como
-`base`.
+publicá-lo. Na confirmação, também é possível selecionar responsáveis,
+revisores, labels e um GitHub Project V2. Depois que o PR for criado, ele será
+aberto em uma nova guia. A branch de origem é enviada como `head` e a branch de
+destino como `base`.
 
 Para criar PRs, instale o [GitHub CLI](https://cli.github.com/) e autentique a
 conta com acesso ao repositório:
@@ -78,7 +80,9 @@ montar nem expor a configuração pessoal do `gh` do host:
 4. Em **Repository access**, selecione **Only select repositories** e escolha o repositório usado no app ou todos.
 5. Em **Repository permissions**, configure:
    - **Contents: Read-only**, para listar branches e ler a comparação.
+   - **Issues: Read and write**, para listar e associar responsáveis e labels.
    - **Pull requests: Read and write**, para criar o PR pelo GitHub CLI.
+   - **Projects: Read and write**, para listar e associar GitHub Projects V2.
 6. Clique em **Generate token** e copie o valor. O GitHub só o exibe na criação.
 
 Se a organização exigir aprovação para tokens ou usar SSO, solicite a aprovação
@@ -106,8 +110,10 @@ docker compose up --build
 ```
 
 Se receber **Resource not accessible by personal access token (HTTP 403)**,
-confirme que o token inclui o repositório correto, tem **Pull requests: Read
-and write** e foi aprovado/autoriza SSO quando exigido pela organização.
+confirme que o token inclui o repositório correto, tem as permissões necessárias
+para a opção selecionada e foi aprovado/autoriza SSO quando exigido pela
+organização. Para solicitar projetos com uma sessão autenticada pelo `gh`,
+autorize o escopo adicional com `gh auth refresh -s project`.
 
 Abra [http://127.0.0.1:8000](http://127.0.0.1:8000). O container usa
 `host.docker.internal:11434` como URL inicial do Ollama. No Linux, o Compose
