@@ -217,7 +217,32 @@ def get_pull_request_options(repository_url: str) -> dict[str, Any]:
         try:
             options[name] = load()
         except (RuntimeError, ValueError, TypeError) as error:
-            options["errors"][name] = str(error)
+            error_message = str(error)
+            if (
+                name == "projects"
+                and "Resource not accessible by personal access token" in error_message
+                and "user.projectsV2" in error_message
+            ):
+                error_message = (
+                    "O GitHub não permite que um fine-grained token acesse "
+                    "Projects V2 pessoais. Use um token classic com o escopo "
+                    "`project` (e `repo` para repositórios privados), ou associe "
+                    "o PR a um projeto pertencente a uma organização com as "
+                    "permissões correspondentes. Responsáveis, revisores e "
+                    "labels continuam disponíveis."
+                )
+            elif (
+                name == "projects"
+                and "Resource not accessible by personal access token" in error_message
+                and "organization.projectsV2" in error_message
+            ):
+                error_message = (
+                    "O token não tem acesso aos Projects V2 dessa organização. "
+                    "Conceda Projects: Read and write ao fine-grained token, "
+                    "confirme que a organização é o resource owner e solicite "
+                    "aprovação/SSO se necessário."
+                )
+            options["errors"][name] = error_message
 
     def get_assignees() -> list[str]:
         users = _github_api_list(f"{repository_path}/assignees?per_page=100")

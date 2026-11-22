@@ -222,6 +222,25 @@ class PullRequestOptionsTests(unittest.TestCase):
         self.assertEqual(options["errors"], {})
         self.assertEqual(run_mock.call_count, 4)
 
+    @patch(
+        "do_pr.github._run_github_cli",
+        side_effect=[
+            json.dumps([[]]),
+            json.dumps([[]]),
+            json.dumps([[]]),
+            RuntimeError(
+                "GraphQL: Resource not accessible by personal access token "
+                "(user.projectsV2.nodes.0)"
+            ),
+        ],
+    )
+    def test_explains_fine_grained_token_limit_for_personal_projects(self, _run_mock):
+        options = github.get_pull_request_options("https://github.com/org/repo")
+
+        self.assertIn("fine-grained token", options["errors"]["projects"])
+        self.assertIn("token classic", options["errors"]["projects"])
+        self.assertIn("labels continuam disponíveis", options["errors"]["projects"])
+
 
 class GeneratePullRequestDescriptionTests(unittest.TestCase):
     @patch(
