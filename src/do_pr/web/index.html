@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>PR Assist — Gerador de Pull Request</title>
+  <style>
+    :root {
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #17231f;
+      background: #f3f6f3;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+      --green: #127653;
+      --green-dark: #0c5d40;
+      --muted: #62706a;
+      --line: #dce5df;
+      --surface: #fff;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; }
+    button, input, select { font: inherit; }
+    .page { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
+    .topbar { height: 76px; display: flex; align-items: center; justify-content: space-between; }
+    .brand { display: flex; align-items: center; gap: 11px; font-size: 17px; font-weight: 750; letter-spacing: -.03em; }
+    .brand-icon { display: grid; width: 35px; height: 35px; place-items: center; border-radius: 11px; color: #fff; background: var(--green); }
+    .local-pill { border: 1px solid var(--line); border-radius: 99px; padding: 7px 11px; color: var(--muted); font-size: 12px; }
+    main { padding: 36px 0 56px; }
+    .intro { max-width: 720px; margin: 0 auto 30px; text-align: center; }
+    .eyebrow { color: var(--green); font-size: 12px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { margin: 12px 0 10px; font-size: clamp(32px, 5vw, 48px); line-height: 1.08; letter-spacing: -.055em; }
+    .intro p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.65; }
+    .workspace { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); align-items: start; gap: 20px; }
+    .card { border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: 0 8px 26px rgb(22 50 38 / 4%); }
+    .form-card { padding: 24px; }
+    .card-heading { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 22px; }
+    .step { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border-radius: 9px; color: var(--green); background: #e8f4ee; font-size: 13px; font-weight: 750; }
+    h2 { margin: 0; font-size: 17px; letter-spacing: -.025em; }
+    .subheading { margin: 5px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .field { margin-top: 17px; }
+    label { display: block; margin-bottom: 7px; color: #34423b; font-size: 13px; font-weight: 650; }
+    input, select { width: 100%; min-height: 43px; border: 1px solid #d5ded8; border-radius: 8px; padding: 10px 12px; color: #17231f; background: #fff; outline: none; transition: border-color .15s, box-shadow .15s; }
+    .change-description { width: 100%; min-height: 92px; resize: vertical; border: 1px solid #d5ded8; border-radius: 8px; padding: 10px 12px; color: #17231f; background: #fff; font: inherit; font-size: 13px; line-height: 1.5; outline: none; transition: border-color .15s, box-shadow .15s; }
+    input::placeholder { color: #9aa59f; }
+    input:focus, select:focus, .change-description:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgb(18 118 83 / 12%); }
+    .change-description::placeholder { color: #9aa59f; }
+    .field-meta { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; color: #89958e; font-size: 11px; }
+    .optional-label { color: var(--muted); font-weight: 400; }
+    input:disabled, select:disabled { color: #89958e; background: #f7f9f7; cursor: not-allowed; }
+    .repo-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .repo-field label { margin-bottom: 0; }
+    .small-button { border: 0; padding: 3px 0; color: var(--green); background: transparent; cursor: pointer; font-size: 12px; font-weight: 650; white-space: nowrap; }
+    .small-button:disabled { color: #89958e; cursor: default; }
+    .branch-status { min-height: 16px; margin: 7px 0 0; color: var(--muted); font-size: 11px; }
+    .branch-status.error { color: #b42318; }
+    .branch-row { display: grid; grid-template-columns: 1fr 32px 1fr; align-items: end; gap: 8px; }
+    .branch-arrow { display: grid; height: 43px; place-items: center; color: #829089; font-size: 18px; }
+    details { margin-top: 19px; border-top: 1px solid #edf1ee; padding-top: 14px; }
+    summary { width: fit-content; color: var(--muted); cursor: pointer; font-size: 13px; font-weight: 600; }
+    .advanced-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    .primary { display: flex; width: 100%; min-height: 47px; align-items: center; justify-content: center; gap: 9px; margin-top: 23px; border: 0; border-radius: 9px; color: #fff; background: var(--green); cursor: pointer; font-weight: 700; transition: background .15s, transform .15s; }
+    .primary:hover { background: var(--green-dark); }
+    .primary:active { transform: translateY(1px); }
+    .primary:disabled { cursor: wait; opacity: .7; }
+    .fine-print { margin: 11px 0 0; color: #89958e; font-size: 11px; line-height: 1.5; text-align: center; }
+    .result-card { min-height: 548px; overflow: hidden; }
+    .result-head { display: flex; min-height: 74px; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #edf1ee; padding: 15px 20px; }
+    .result-title { display: flex; align-items: center; gap: 10px; }
+    .result-title h2 { font-size: 15px; }
+    .result-title p { margin: 4px 0 0; color: var(--muted); font-size: 12px; }
+    .result-actions { display: flex; gap: 8px; }
+    .secondary { min-height: 34px; border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; color: #34423b; background: #fff; cursor: pointer; font-size: 12px; font-weight: 650; }
+    .secondary:hover:not(:disabled) { border-color: #9eb4a8; background: #f8faf8; }
+    .secondary:disabled { cursor: default; opacity: .45; }
+    .output-wrap { position: relative; min-height: 472px; }
+    #description { display: block; width: 100%; min-height: 472px; resize: vertical; border: 0; padding: 20px; color: #34423b; background: #fff; font: 13px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; outline: none; }
+    #description::placeholder { color: #98a39d; }
+    .status { min-height: 20px; margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+    .status.error { color: #b42318; }
+    dialog { width: min(680px, calc(100% - 32px)); max-height: min(85vh, 760px); border: 1px solid var(--line); border-radius: 14px; padding: 24px; color: #17231f; box-shadow: 0 24px 80px rgb(22 50 38 / 24%); }
+    dialog::backdrop { background: rgb(17 31 24 / 52%); }
+    dialog h2 { margin: 0; }
+    .dialog-intro { margin: 7px 0 18px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .dialog-field { margin-top: 14px; }
+    .dialog-field input, .dialog-field textarea { width: 100%; border: 1px solid #d5ded8; border-radius: 8px; padding: 10px 12px; color: #17231f; background: #fff; font: inherit; font-size: 13px; line-height: 1.5; }
+    .dialog-field textarea { min-height: 220px; resize: vertical; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 18px; }
+    .dialog-actions .primary { width: auto; min-height: 40px; margin: 0; padding: 0 15px; }
+    .dialog-actions .secondary { min-height: 40px; padding: 0 15px; }
+    .dialog-actions button:disabled { cursor: wait; opacity: .65; }
+    .dialog-status { min-height: 18px; margin: 12px 0 0; color: var(--muted); font-size: 12px; }
+    .dialog-status.error { color: #b42318; }
+    .spinner { display: none; width: 15px; height: 15px; border: 2px solid rgb(255 255 255 / 40%); border-top-color: white; border-radius: 50%; animation: spin .7s linear infinite; }
+    .primary[aria-busy="true"] .spinner { display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    footer { padding: 0 0 24px; color: #89958e; font-size: 12px; text-align: center; }
+    @media (max-width: 760px) {
+      .page { width: min(100% - 28px, 540px); }
+      main { padding-top: 23px; }
+      .workspace { grid-template-columns: 1fr; }
+      .result-card { min-height: 400px; }
+      .output-wrap, #description { min-height: 350px; }
+    }
+    @media (max-width: 440px) {
+      .form-card { padding: 18px; }
+      .branch-row { grid-template-columns: 1fr; gap: 0; }
+      .branch-arrow { display: none; }
+      .advanced-grid { grid-template-columns: 1fr; }
+      .result-head { align-items: flex-start; flex-direction: column; }
+      .result-actions { width: 100%; }
+      .secondary { flex: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <div class="brand"><span class="brand-icon" aria-hidden="true">PR</span><span>PR Assist</span></div>
+      <span class="local-pill">● Processamento local</span>
+    </header>
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <span class="eyebrow">Pull requests mais simples</span>
+        <h1>Uma descrição de PR, pronta para revisar.</h1>
+        <p>Informe o repositório e as branches. O diff entre elas será enviado ao provedor de IA escolhido para preparar um rascunho em Markdown.</p>
+      </section>
+      <div class="workspace">
+        <section class="card form-card" aria-labelledby="form-title">
+          <div class="card-heading">
+            <span class="step" aria-hidden="true">01</span>
+            <div><h2 id="form-title">Configure sua comparação</h2><p class="subheading">A branch de origem será mergeada na branch de destino.</p></div>
+          </div>
+          <form id="generator-form">
+            <div class="field">
+              <div class="repo-field"><label for="repository">URL do repositório</label><button class="small-button" id="reload-branches" type="button" disabled>Recarregar branches</button></div>
+              <input id="repository" name="repository_url" type="url" placeholder="https://github.com/empresa/projeto" required autocomplete="url">
+              <p class="branch-status" id="branch-status" role="status" aria-live="polite">As branches serão carregadas automaticamente após informar a URL.</p>
+            </div>
+            <div class="field">
+              <div class="branch-row">
+                <div><label for="source">Branch de origem</label><select id="source" name="source_branch" required disabled><option value="">Informe o repositório primeiro</option></select></div>
+                <span class="branch-arrow" aria-hidden="true">→</span>
+                <div><label for="target">Branch de destino</label><select id="target" name="target_branch" required disabled><option value="">Informe o repositório primeiro</option></select></div>
+              </div>
+            </div>
+            <div class="field">
+              <label for="change-description">O que mudou? <span class="optional-label">(opcional)</span></label>
+              <textarea class="change-description" id="change-description" name="change_description" rows="3" maxlength="2000" placeholder="Ex.: Adicionei login com Google e validação de sessão. Isso ajuda a direcionar o resumo do PR."></textarea>
+              <div class="field-meta"><span>Uma breve descrição ajuda a dar foco ao PR.</span><span id="description-count">0/2000</span></div>
+            </div>
+            <details>
+              <summary>Configurações do modelo</summary>
+              <div class="advanced-grid">
+                <div class="field"><label for="provider">Provedor</label><select id="provider" name="provider">
+                  <option value="ollama">Ollama (local)</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="openai-compatible">Outro compatível com OpenAI</option>
+                </select></div>
+                <div class="field"><label for="model">Modelo</label><input id="model" name="model" type="text" value="qwen2.5-coder:7b" placeholder="Identificador do modelo" required></div>
+                <div class="field"><label for="base-url">URL base da API</label><input id="base-url" name="base_url" type="url" value="{{OLLAMA_URL}}" required></div>
+                <div class="field" id="api-key-field" hidden><label for="api-key">Chave da API <span class="optional-label" id="api-key-optional">(opcional)</span></label><input id="api-key" name="api_key" type="password" autocomplete="off" placeholder="sk-..."><span class="field-meta" id="api-key-help">A chave é enviada apenas ao provedor escolhido e não é salva.</span></div>
+                <div class="field"><label for="timeout">Timeout (segundos)</label><input id="timeout" name="timeout" type="number" value="300" min="1" required></div>
+                <div class="field"><label for="num-ctx">Tamanho do contexto</label><input id="num-ctx" name="num_ctx" type="number" value="8192" min="4096" required></div>
+              </div>
+              <p class="fine-print" id="provider-help">Ollama roda localmente. Para outros provedores, o diff será enviado à URL configurada.</p>
+            </details>
+            <button class="primary" id="generate" type="submit" disabled><span class="spinner" aria-hidden="true"></span><span id="button-label">Gerar descrição do PR</span><span aria-hidden="true">↗</span></button>
+            <p class="fine-print">Para repositórios privados, configure GITHUB_TOKEN antes de iniciar o servidor.</p>
+            <p class="status" id="status" role="status" aria-live="polite"></p>
+          </form>
+        </section>
+        <section class="card result-card" aria-labelledby="result-heading">
+          <div class="result-head">
+            <div class="result-title"><span class="step" aria-hidden="true">02</span><div><h2 id="result-heading">Sua descrição</h2><p>O resultado aparecerá aqui em Markdown.</p></div></div>
+            <div class="result-actions">
+              <button class="secondary" id="copy" type="button" disabled>Copiar</button>
+              <button class="secondary" id="download" type="button" disabled>Baixar .md</button>
+            </div>
+          </div>
+          <div class="output-wrap">
+            <textarea id="description" aria-label="Descrição de pull request gerada" placeholder="## Título sugerido&#10;&#10;Sua descrição de PR será exibida aqui após a geração." spellcheck="false"></textarea>
+          </div>
+        </section>
+      </div>
+    </main>
+    <footer>GitHub + seu provedor de IA · Revise o conteúdo e os testes antes de abrir o PR.</footer>
+  </div>
+  <dialog id="create-pr-dialog" aria-labelledby="create-pr-title">
+    <h2 id="create-pr-title">Revise e confirme o pull request</h2>
+    <p class="dialog-intro" id="create-pr-target"></p>
+    <div class="dialog-field">
+      <label for="pr-title">Título</label>
+      <input id="pr-title" maxlength="256" required>
+    </div>
+    <div class="dialog-field">
+      <label for="pr-body">Body do PR (Markdown)</label>
+      <textarea id="pr-body" maxlength="50000" required></textarea>
+    </div>
+    <p class="dialog-status" id="create-pr-status" role="status" aria-live="polite"></p>
+    <div class="dialog-actions">
+      <button class="secondary" id="cancel-create-pr" type="button">Cancelar</button>
+      <button class="primary" id="confirm-create-pr" type="button">Confirmar e criar PR</button>
+    </div>
+  </dialog>
+  <script>
+    const form = document.querySelector("#generator-form");
+    const generateButton = document.querySelector("#generate");
+    const buttonLabel = document.querySelector("#button-label");
+    const output = document.querySelector("#description");
+    const status = document.querySelector("#status");
+    const copyButton = document.querySelector("#copy");
+    const downloadButton = document.querySelector("#download");
+    const repositoryInput = document.querySelector("#repository");
+    const sourceSelect = document.querySelector("#source");
+    const targetSelect = document.querySelector("#target");
+    const branchStatus = document.querySelector("#branch-status");
+    const reloadBranchesButton = document.querySelector("#reload-branches");
+    const changeDescription = document.querySelector("#change-description");
+    const descriptionCount = document.querySelector("#description-count");
+    const providerSelect = document.querySelector("#provider");
+    const modelInput = document.querySelector("#model");
+    const baseUrlInput = document.querySelector("#base-url");
+    const apiKeyInput = document.querySelector("#api-key");
+    const apiKeyField = document.querySelector("#api-key-field");
+    const apiKeyOptional = document.querySelector("#api-key-optional");
+    const apiKeyHelp = document.querySelector("#api-key-help");
+    const providerHelp = document.querySelector("#provider-help");
+    const createPrDialog = document.querySelector("#create-pr-dialog");
+    const prTitleInput = document.querySelector("#pr-title");
+    const prBodyInput = document.querySelector("#pr-body");
+    const createPrTarget = document.querySelector("#create-pr-target");
+    const createPrStatus = document.querySelector("#create-pr-status");
+    const confirmCreatePrButton = document.querySelector("#confirm-create-pr");
+    const cancelCreatePrButton = document.querySelector("#cancel-create-pr");
+    const providerSettings = {
+      ollama: {
+        model: "qwen2.5-coder:7b",
+        baseUrl: baseUrlInput.value,
+        apiKeyRequired: false,
+        keyPlaceholder: "",
+      },
+      openai: {
+        model: "gpt-4o-mini",
+        baseUrl: "https://api.openai.com/v1",
+        apiKeyRequired: true,
+        keyPlaceholder: "sk-...",
+      },
+      "openai-compatible": {
+        model: "",
+        baseUrl: "http://localhost:1234/v1",
+        apiKeyRequired: false,
+        keyPlaceholder: "Chave do provedor, se necessária",
+      },
+    };
+    let activeProvider = providerSelect.value;
+    let branchTimer;
+    let branchRequestId = 0;
+    let branchController;
+    let pendingPullRequest;
+
+    function setBranchOptions(select, branches, placeholder) {
+      select.replaceChildren(new Option(placeholder, ""));
+      for (const branch of branches) {
+        select.add(new Option(branch, branch));
+      }
+      select.disabled = branches.length === 0;
+    }
+
+    async function loadBranches(repositoryUrl, requestId) {
+      const controller = new AbortController();
+      branchController = controller;
+      branchStatus.className = "branch-status";
+      branchStatus.textContent = "Buscando branches no repositório...";
+
+      try {
+        const response = await fetch("/api/branches", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repository_url: repositoryUrl }),
+          signal: controller.signal,
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Não foi possível buscar as branches.");
+        if (requestId !== branchRequestId || repositoryUrl !== repositoryInput.value.trim()) return;
+        if (!Array.isArray(result.branches) || !result.branches.every((branch) => typeof branch === "string")) {
+          throw new Error("O servidor retornou uma lista de branches inválida.");
+        }
+
+        const branches = result.branches;
+        setBranchOptions(sourceSelect, branches, "Selecione a origem");
+        setBranchOptions(targetSelect, branches, "Selecione o destino");
+        if (branches.length) {
+          const preferredTarget = ["develop", "main", "master"].find((name) => branches.includes(name)) || branches[0];
+          targetSelect.value = preferredTarget;
+          generateButton.disabled = false;
+          reloadBranchesButton.disabled = false;
+          branchStatus.textContent = `${branches.length} branch${branches.length === 1 ? "" : "es"} carregada${branches.length === 1 ? "" : "s"}.`;
+        } else {
+          branchStatus.className = "branch-status error";
+          branchStatus.textContent = "Nenhuma branch foi encontrada neste repositório.";
+        }
+      } catch (error) {
+        if (error.name === "AbortError" || requestId !== branchRequestId) return;
+        branchStatus.className = "branch-status error";
+        branchStatus.textContent = error.message || "Falha ao buscar branches.";
+        setBranchOptions(sourceSelect, [], "Branches indisponíveis");
+        setBranchOptions(targetSelect, [], "Branches indisponíveis");
+      } finally {
+        if (requestId === branchRequestId) branchController = null;
+      }
+    }
+
+    function scheduleBranchLoad(immediate = false) {
+      clearTimeout(branchTimer);
+      if (branchController) branchController.abort();
+      branchController = null;
+      const requestId = ++branchRequestId;
+      const repositoryUrl = repositoryInput.value.trim();
+      setBranchOptions(sourceSelect, [], "Aguardando repositório");
+      setBranchOptions(targetSelect, [], "Aguardando repositório");
+      generateButton.disabled = true;
+      reloadBranchesButton.disabled = true;
+      if (!repositoryUrl) {
+        branchStatus.className = "branch-status";
+        branchStatus.textContent = "As branches serão carregadas automaticamente após informar a URL.";
+        return;
+      }
+      if (!repositoryInput.checkValidity()) {
+        branchStatus.className = "branch-status";
+        branchStatus.textContent = "Informe uma URL válida de repositório.";
+        return;
+      }
+
+      branchStatus.className = "branch-status";
+      branchStatus.textContent = "Aguardando a URL do repositório...";
+      branchTimer = setTimeout(
+        () => loadBranches(repositoryUrl, requestId),
+        immediate ? 0 : 700,
+      );
+    }
+
+    repositoryInput.addEventListener("input", () => scheduleBranchLoad());
+    repositoryInput.addEventListener("change", () => scheduleBranchLoad(true));
+    repositoryInput.addEventListener("blur", () => {
+      if (repositoryInput.value.trim()) scheduleBranchLoad(true);
+    });
+    reloadBranchesButton.addEventListener("click", () => scheduleBranchLoad(true));
+    changeDescription.addEventListener("input", () => {
+      descriptionCount.textContent = `${changeDescription.value.length}/2000`;
+    });
+
+    providerSelect.addEventListener("change", () => {
+      const previousSettings = providerSettings[activeProvider];
+      const nextProvider = providerSelect.value;
+      const nextSettings = providerSettings[nextProvider];
+      if (modelInput.value === previousSettings.model) modelInput.value = nextSettings.model;
+      if (baseUrlInput.value === previousSettings.baseUrl) baseUrlInput.value = nextSettings.baseUrl;
+
+      apiKeyInput.value = "";
+      apiKeyField.hidden = nextProvider === "ollama";
+      apiKeyInput.required = false;
+      apiKeyOptional.hidden = nextSettings.apiKeyRequired;
+      apiKeyInput.placeholder = nextSettings.keyPlaceholder;
+      apiKeyHelp.textContent = nextSettings.apiKeyRequired
+        ? "Informe sua chave ou configure OPENAI_API_KEY no ambiente."
+        : "A chave é enviada apenas ao provedor escolhido e não é salva.";
+      providerHelp.textContent = nextProvider === "ollama"
+        ? "Ollama roda localmente."
+        : "O diff das branches será enviado à URL configurada. Use apenas um provedor em que confia.";
+      activeProvider = nextProvider;
+    });
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!form.reportValidity()) return;
+
+      const values = new FormData(form);
+      const payload = Object.fromEntries(values.entries());
+      payload.timeout = Number(payload.timeout);
+      payload.num_ctx = Number(payload.num_ctx);
+
+      output.value = "";
+      copyButton.disabled = true;
+      downloadButton.disabled = true;
+      generateButton.disabled = true;
+      generateButton.setAttribute("aria-busy", "true");
+      buttonLabel.textContent = "Analisando as branches...";
+      status.className = "status";
+      status.textContent = "Coletando o diff e gerando título e body do PR...";
+
+      try {
+        const response = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Não foi possível gerar a descrição.");
+
+        if (
+          typeof result.title !== "string"
+          || typeof result.body !== "string"
+          || typeof result.description !== "string"
+        ) {
+          throw new Error("O servidor retornou um rascunho de PR inválido.");
+        }
+        pendingPullRequest = {
+          repository_url: payload.repository_url,
+          source_branch: payload.source_branch,
+          target_branch: payload.target_branch,
+        };
+        output.value = result.description;
+        prTitleInput.value = result.title;
+        prBodyInput.value = result.body;
+        createPrTarget.textContent =
+          `Será criado um PR de ${pendingPullRequest.source_branch} para ${pendingPullRequest.target_branch}. ` +
+          "Confira o título e o body. Nada será publicado até você confirmar.";
+        createPrStatus.className = "dialog-status";
+        createPrStatus.textContent = "";
+        copyButton.disabled = false;
+        downloadButton.disabled = false;
+        status.textContent = "Rascunho gerado. Confirme se deseja criar o PR no GitHub.";
+        createPrDialog.showModal();
+      } catch (error) {
+        status.className = "status error";
+        status.textContent = error.message || "Falha ao falar com o servidor local.";
+      } finally {
+        generateButton.disabled = false;
+        generateButton.removeAttribute("aria-busy");
+        buttonLabel.textContent = "Gerar descrição do PR";
+      }
+    });
+
+    cancelCreatePrButton.addEventListener("click", () => {
+      createPrDialog.close();
+      status.className = "status";
+      status.textContent = "Criação cancelada. O rascunho continua disponível para copiar ou baixar.";
+    });
+
+    function syncDescriptionFromDraftFields() {
+      output.value = `# ${prTitleInput.value.trim()}\n\n${prBodyInput.value.trim()}`;
+    }
+
+    prTitleInput.addEventListener("input", syncDescriptionFromDraftFields);
+    prBodyInput.addEventListener("input", syncDescriptionFromDraftFields);
+
+    confirmCreatePrButton.addEventListener("click", async () => {
+      if (!pendingPullRequest || !prTitleInput.reportValidity() || !prBodyInput.reportValidity()) return;
+
+      confirmCreatePrButton.disabled = true;
+      cancelCreatePrButton.disabled = true;
+      confirmCreatePrButton.textContent = "Criando PR...";
+      createPrStatus.className = "dialog-status";
+      createPrStatus.textContent = "Enviando solicitação ao GitHub CLI...";
+      try {
+        const response = await fetch("/api/create-pr", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...pendingPullRequest,
+            title: prTitleInput.value,
+            body: prBodyInput.value,
+          }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Não foi possível criar o PR.");
+        if (typeof result.url !== "string") {
+          throw new Error("O servidor não retornou o endereço do PR criado.");
+        }
+
+        createPrDialog.close();
+        status.className = "status";
+        status.textContent = `Pull request criado: ${result.url}`;
+        pendingPullRequest = null;
+      } catch (error) {
+        createPrStatus.className = "dialog-status error";
+        createPrStatus.textContent = error.message || "Falha ao criar o PR pelo GitHub CLI.";
+      } finally {
+        confirmCreatePrButton.disabled = false;
+        cancelCreatePrButton.disabled = false;
+        confirmCreatePrButton.textContent = "Confirmar e criar PR";
+      }
+    });
+
+    copyButton.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(output.value);
+        status.className = "status";
+        status.textContent = "Descrição copiada para a área de transferência.";
+      } catch {
+        output.focus();
+        output.select();
+        status.className = "status error";
+        status.textContent = "Não foi possível copiar automaticamente. Selecione e copie o texto.";
+      }
+    });
+
+    downloadButton.addEventListener("click", () => {
+      const file = new Blob([output.value], { type: "text/markdown;charset=utf-8" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(file);
+      link.download = "pr_description.md";
+      link.click();
+      URL.revokeObjectURL(link.href);
+    });
+  </script>
+</body>
+</html>
